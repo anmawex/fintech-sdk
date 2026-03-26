@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Fintech SDK Demo</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+    <style>
+      body {
+        margin: 0;
+        min-height: 100vh;
+        background: linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%);
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        font-family: 'Inter', sans-serif;
+      }
+      .container {
+        max-width: 600px;
+        text-align: center;
+        padding: 20px;
+      }
+      h1 {
+        color: #1e293b;
+        margin-bottom: 2rem;
+      }
+    </style>
+    <script type="module" src="/src/fintech-payment.ts"></script>
+  </head>
+  <body>
+    <div class="container">
+      <h1>Demo de Integración</h1>
+      <p>Simplemente añade la etiqueta &lt;fintech-payment /&gt; en tu HTML:</p>
+      
+      <fintech-payment 
+        amount="149.99" 
+        currency="USD"
+        id="payment-widget"
+      ></fintech-payment>
+
+      <div id="log" style="margin-top: 2rem; color: #10b981; font-weight: 600;"></div>
+    </div>
+
+    <script>
+      const widget = document.getElementById('payment-widget');
+      const log = document.getElementById('log');
+
+      widget.addEventListener('payment-success', (e) => {
+        console.log('Payment successful event caught:', e.detail);
+        log.textContent = `¡Evento recibido! Pago de ${e.detail.amount} ${e.detail.currency} procesado.`;
+      });
+    </script>
+  </body>
+</html>
