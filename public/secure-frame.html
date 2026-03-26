@@ -1,0 +1,249 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Terminal de Pago Seguro</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+  <style>
+    body {
+      margin: 0;
+      padding: 0;
+      font-family: 'Inter', system-ui, sans-serif;
+      overflow: hidden; /* Ocultar scrollbars */
+      background: transparent;
+    }
+
+    /* Estilos del formulario dentro del iframe (Aislados) */
+    form {
+      display: flex;
+      flex-direction: column;
+      gap: 1.25rem;
+      padding: 5px;
+    }
+
+    .form-group {
+      display: flex;
+      flex-direction: column;
+    }
+
+    label {
+      font-size: 0.75rem;
+      font-weight: 600;
+      color: var(--ft-text-light, #64748b);
+      margin-bottom: 0.5rem;
+      text-transform: uppercase;
+    }
+
+    input {
+      width: 100%;
+      padding: 0.75rem 1rem;
+      border: 1px solid rgba(226, 232, 240, 0.8);
+      border-radius: var(--ft-inner-border-radius, 12px);
+      background: white;
+      font-size: 1rem;
+      color: var(--ft-text-color, #1e293b);
+      transition: border-color 0.2s, box-shadow 0.2s;
+      box-sizing: border-box;
+      font-family: 'Inter', system-ui, sans-serif;
+    }
+
+    input:focus {
+      outline: none;
+      border-color: var(--ft-primary-color, #6366f1);
+      box-shadow: 0 0 0 4px rgba(99, 102, 241, 0.1);
+    }
+    
+    input.invalid {
+      border-color: #ef4444;
+      box-shadow: 0 0 0 4px rgba(239, 68, 68, 0.1);
+    }
+    
+    .error-text {
+      color: #ef4444;
+      font-size: 0.7rem;
+      margin-top: 0.25rem;
+      display: none;
+    }
+    input.invalid + .error-text {
+      display: block;
+    }
+
+    .row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 1rem;
+    }
+  </style>
+</head>
+<body>
+  <form id="secure-payment-form">
+    <div class="form-group">
+      <label for="card-number">Número de tarjeta</label>
+      <input 
+        id="card-number" 
+        type="text" 
+        placeholder="0000 0000 0000 0000" 
+        maxlength="19" 
+        required
+      >
+      <div class="error-text">Número de tarjeta inválido</div>
+    </div>
+    <div class="form-group">
+      <label for="card-name">Nombre en la tarjeta</label>
+      <input 
+        id="card-name" 
+        type="text" 
+        placeholder="Ej. Juan Pérez" 
+        required
+      >
+    </div>
+    <div class="row">
+      <div class="form-group">
+        <label for="card-expiry">Expiración</label>
+        <input 
+          id="card-expiry" 
+          type="text" 
+          placeholder="MM/YY" 
+          maxlength="5" 
+          required
+        >
+      </div>
+      <div class="form-group">
+        <label for="card-cvv">CVV</label>
+        <input id="card-cvv" type="password" placeholder="123" maxlength="4" required>
+      </div>
+    </div>
+  </form>
+
+  <script type="module">
+    const TARGET_ORIGIN = '*';
+    
+    // Luhn Algorithm validation
+    function isLuhnValid(cardNumber) {
+      const digits = cardNumber.replace(/\D/g, '');
+      if (digits.length < 13) return false;
+      
+      let sum = 0;
+      let isEven = false;
+      
+      for (let i = digits.length - 1; i >= 0; i--) {
+        let digit = parseInt(digits.charAt(i), 10);
+        
+        if (isEven) {
+          digit *= 2;
+          if (digit > 9) {
+            digit -= 9;
+          }
+        }
+        
+        sum += digit;
+        isEven = !isEven;
+      }
+      return (sum % 10) === 0;
+    }
+
+    window.addEventListener('message', (event) => {
+      const { type, payload } = event.data;
+
+      if (type === 'APPLY_STYLES') {
+        const root = document.documentElement;
+        if (payload.primaryColor) root.style.setProperty('--ft-primary-color', payload.primaryColor);
+        if (payload.innerRadius) root.style.setProperty('--ft-inner-border-radius', payload.innerRadius);
+        if (payload.fontFamily) {
+           root.style.setProperty('font-family', payload.fontFamily);
+           document.querySelectorAll('input').forEach(i => i.style.fontFamily = payload.fontFamily);
+        }
+      }
+
+      if (type === 'SUBMIT_PAYMENT') {
+        const cardNumberInput = document.getElementById('card-number');
+        
+        // Final validation before processing
+        if (!isLuhnValid(cardNumberInput.value)) {
+           cardNumberInput.classList.add('invalid');
+           window.parent.postMessage({
+             type: 'PAYMENT_ERROR',
+             payload: { message: 'El número de tarjeta no es válido (Luhn Check falló).' }
+           }, TARGET_ORIGIN);
+           return;
+        }
+
+        processPayment(payload.amount, payload.currency, payload.clientId);
+      }
+    });
+
+    const inputs = ['card-number', 'card-name', 'card-expiry'];
+    
+    inputs.forEach(id => {
+      document.getElementById(id).addEventListener('input', (e) => {
+        let valueToSend = e.target.value;
+        const inputEl = e.target;
+        
+        // Auto-format card number
+        if (id === 'card-number') {
+          // Remove non-digits
+          let formatted = valueToSend.replace(/\D/g, '');
+          // Add spaces every 4 digits
+          formatted = formatted.replace(/(.{4})/g, '$1 ').trim();
+          inputEl.value = formatted;
+          valueToSend = formatted;
+
+          // Real-time Luhn validation check (only show error if they typed enough)
+          const rawDigits = formatted.replace(/\D/g, '');
+          if (rawDigits.length >= 13) {
+            if (isLuhnValid(rawDigits)) {
+              inputEl.classList.remove('invalid');
+            } else {
+              inputEl.classList.add('invalid');
+            }
+          } else {
+            inputEl.classList.remove('invalid');
+          }
+
+          // Ofuscación para el padre
+          if (rawDigits.length > 4) {
+             const last4 = rawDigits.slice(-4);
+             valueToSend = `**** **** **** ${last4}`;
+          }
+        }
+
+        window.parent.postMessage({
+          type: 'INPUT_UPDATE',
+          payload: { id, value: valueToSend }
+        }, TARGET_ORIGIN);
+      });
+    });
+
+    async function processPayment(amount, currency, clientId) {
+      const cardNumber = document.getElementById('card-number').value.replace(/\D/g, '');
+      const cardName = document.getElementById('card-name').value;
+      const cardExpiry = document.getElementById('card-expiry').value;
+      const cardCvv = document.getElementById('card-cvv').value;
+
+      try {
+        await new Promise(resolve => setTimeout(resolve, 2000));
+        
+        window.parent.postMessage({
+          type: 'PAYMENT_SUCCESS',
+          payload: {
+            status: 'approved',
+            token: 'tok_' + Math.random().toString(36).substr(2, 9),
+            last4: cardNumber.slice(-4) || '0000',
+            amount,
+            currency
+          }
+        }, TARGET_ORIGIN);
+
+      } catch (error) {
+         window.parent.postMessage({
+          type: 'PAYMENT_ERROR',
+          payload: { message: 'Transacción denegada' }
+        }, TARGET_ORIGIN);
+      }
+    }
+  </script>
+</body>
+</html>

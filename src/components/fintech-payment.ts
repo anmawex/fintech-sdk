@@ -206,9 +206,12 @@ export class FintechPayment extends LitElement {
     }
   `;
 
+
+
   @property({ type: String }) amount = '0.00';
   @property({ type: String }) currency = 'USD';
   @property({ type: String, attribute: 'client-id' }) clientId = '';
+  @property({ type: String, attribute: 'iframe-origin' }) iframeOrigin = 'https://secure.tufintech.com';
   
   @state() private cardNumber = '**** **** **** ****';
   @state() private cardName = 'NOMBRE DEL TITULAR';
@@ -216,38 +219,88 @@ export class FintechPayment extends LitElement {
   @state() private isProcessing = false;
   @state() private isSuccess = false;
 
-  private handleCardUpdate(e: Event) {
-    const input = e.target as HTMLInputElement;
-    const value = input.value;
-    if (input.id === 'card-number') {
-      this.cardNumber = value || '**** **** **** ****';
-    } else if (input.id === 'card-name') {
-      this.cardName = (value || 'NOMBRE DEL TITULAR').toUpperCase();
-    } else if (input.id === 'card-expiry') {
-      this.cardExpiry = value || 'MM/YY';
+  constructor() {
+    super();
+    this.handlePostMessage = this.handlePostMessage.bind(this);
+  }
+
+  connectedCallback() {
+    super.connectedCallback();
+    window.addEventListener('message', this.handlePostMessage);
+  }
+
+  disconnectedCallback() {
+    window.removeEventListener('message', this.handlePostMessage);
+    super.disconnectedCallback();
+  }
+
+  // Capturar mensajes desde el iframe
+  private handlePostMessage(event: MessageEvent) {
+    // Si viene de Vite en dev enviando reload, ignoramos
+    if(event.data?.type === 'vite:ws:disconnect') return;
+
+    // TODO: En prod, validar origen del iframe: event.origin === 'https://secure.miapp.com'
+
+    if (event.data?.type === 'INPUT_UPDATE') {
+       const { id, value } = event.data.payload;
+       if (id === 'card-number') this.cardNumber = value || '**** **** **** ****';
+       if (id === 'card-name') this.cardName = (value || 'NOMBRE DEL TITULAR').toUpperCase();
+       if (id === 'card-expiry') this.cardExpiry = value || 'MM/YY';
+    }
+
+    if (event.data?.type === 'PAYMENT_SUCCESS') {
+       this.isProcessing = false;
+       this.isSuccess = true;
+       
+       // Emitir el evento de éxito seguro a la app padre SIN LOS DATOS SENSIBLES
+       this.dispatchEvent(new CustomEvent('payment-success', {
+         detail: { 
+           amount: this.amount, 
+           currency: this.currency, 
+           clientId: this.clientId,
+           token: event.data.payload.token // SDK retorna el Token
+         },
+         bubbles: true,
+         composed: true
+       }));
+
+       setTimeout(() => {
+         this.isSuccess = false;
+       }, 3000);
+    }
+
+    if(event.data?.type === 'PAYMENT_ERROR') {
+       this.isProcessing = false;
+       alert(event.data.payload.message); // Simple error display
     }
   }
 
-  private async handleSubmit(e: Event) {
+  // Enviar comando de pago al iframe
+  private handleSubmit(e: Event) {
     e.preventDefault();
     this.isProcessing = true;
     
-    // Simular procesamiento
-    await new Promise(resolve => setTimeout(resolve, 2000));
+    const iframe = this.shadowRoot?.querySelector('iframe') as HTMLIFrameElement;
+    iframe?.contentWindow?.postMessage({
+      type: 'SUBMIT_PAYMENT',
+      payload: { amount: this.amount, currency: this.currency, clientId: this.clientId }
+    }, '*');
+  }
+
+  // Notificar estilos al iframe cuando carga
+  private handleIframeLoad(e: Event) {
+    const iframe = e.target as HTMLIFrameElement;
     
-    this.isProcessing = false;
-    this.isSuccess = true;
-
-    // Dispatch custom event
-    this.dispatchEvent(new CustomEvent('payment-success', {
-      detail: { amount: this.amount, currency: this.currency, clientId: this.clientId },
-      bubbles: true,
-      composed: true
-    }));
-
-    setTimeout(() => {
-      this.isSuccess = false;
-    }, 3000);
+    // Obtener variables CSS calculadas del ShadowDOM y enviarlas al iframe
+    const style = getComputedStyle(this);
+    iframe.contentWindow?.postMessage({
+      type: 'APPLY_STYLES',
+      payload: {
+        primaryColor: style.getPropertyValue('--fintech-primary').trim(),
+        innerRadius: style.getPropertyValue('--fintech-inner-radius').trim(),
+        fontFamily: style.getPropertyValue('--fintech-font').trim()
+      }
+    }, '*');
   }
 
   render() {
@@ -273,58 +326,25 @@ export class FintechPayment extends LitElement {
           </div>
         </div>
 
-        <form @submit=${this.handleSubmit} part="form">
-          <div class="form-group" part="form-group">
-            <label for="card-number" part="label">Número de tarjeta</label>
-            <input 
-              id="card-number" 
-              type="text" 
-              placeholder="0000 0000 0000 0000" 
-              maxlength="19" 
-              @input=${this.handleCardUpdate}
-              required
-              part="input"
-            >
-          </div>
-          <div class="form-group" part="form-group">
-            <label for="card-name" part="label">Nombre en la tarjeta</label>
-            <input 
-              id="card-name" 
-              type="text" 
-              placeholder="Ej. Juan Pérez" 
-              @input=${this.handleCardUpdate}
-              required
-              part="input"
-            >
-          </div>
-          <div class="row">
-            <div class="form-group" part="form-group">
-              <label for="card-expiry" part="label">Expiración</label>
-              <input 
-                id="card-expiry" 
-                type="text" 
-                placeholder="MM/YY" 
-                maxlength="5" 
-                @input=${this.handleCardUpdate}
-                required
-                part="input"
-              >
-            </div>
-            <div class="form-group" part="form-group">
-              <label for="card-cvv" part="label">CVV</label>
-              <input id="card-cvv" type="password" placeholder="123" maxlength="3" required part="input">
-            </div>
-          </div>
+        <!-- 
+          El iframe carga DESDE EL ORIGEN DE LA FINTECH (ej. secure.tufintech.com)
+          Aislando completamente el DOM del formulario de la tienda online
+        -->
+        <iframe 
+          src="${this.iframeOrigin}/secure-frame.html" 
+          class="iframe-container" 
+          sandbox="allow-scripts allow-same-origin"
+          @load=${this.handleIframeLoad}
+        ></iframe>
 
-          <button type="submit" class="pay-btn" ?disabled=${this.isProcessing} part="button">
-            ${this.isProcessing ? 'Procesando...' : `Pagar ${this.amount} ${this.currency}`}
-          </button>
-        </form>
+        <button @click=${this.handleSubmit} class="pay-btn" ?disabled=${this.isProcessing} part="button">
+          ${this.isProcessing ? 'Procesando en entorno seguro...' : `Pagar ${this.amount} ${this.currency}`}
+        </button>
 
         <div class="success-overlay ${this.isSuccess ? 'show' : ''}" part="success-overlay">
           <div class="checkmark">✓</div>
           <h3 part="success-title">¡Pago Exitoso!</h3>
-          <p part="success-message">Tu transacción ha sido confirmada.</p>
+          <p part="success-message">Tu transacción ha sido confirmada de forma 100% segura.</p>
         </div>
       </div>
     `;
