@@ -34,25 +34,65 @@
   <body>
     <div class="container">
       <h1>Demo de Integración</h1>
-      <p>Simplemente añade la etiqueta &lt;fintech-payment /&gt; en tu HTML:</p>
       
-      <fintech-payment 
-        client-id="DEMO-12345"
-        amount="149.99" 
-        currency="USD"
-        id="payment-widget"
-      ></fintech-payment>
+      <div class="demo-section">
+        <h3>Tema por Defecto</h3>
+        <fintech-payment 
+          client-id="DEMO-DEFAULT"
+          amount="149.99" 
+          currency="USD"
+        ></fintech-payment>
+      </div>
+
+      <div class="demo-section" style="margin-top: 4rem;">
+        <h3>Tema Corporativo Personalizado</h3>
+        <p>Personalizado mediante variables CSS externas:</p>
+        <fintech-payment 
+          class="custom-theme"
+          client-id="DEMO-CUSTOM"
+          amount="89.50" 
+          currency="EUR"
+        ></fintech-payment>
+      </div>
 
       <div id="log" style="margin-top: 2rem; color: #10b981; font-weight: 600;"></div>
     </div>
 
+    <style>
+      .demo-section {
+        background: white;
+        padding: 20px;
+        border-radius: 20px;
+        box-shadow: 0 4px 6px rgba(0,0,0,0.05);
+      }
+      
+      /* Personalización vía Variables CSS (Public Tokens) */
+      .custom-theme {
+        --ft-primary-color: #f97316; /* Naranja corporativo */
+        --ft-primary-hover-color: #ea580c;
+        --ft-border-radius: 4px; /* Estilo alineado */
+        --ft-inner-border-radius: 4px;
+        --ft-card-gradient: linear-gradient(135deg, #444 0%, #000 100%); /* Tarjeta dark */
+        --ft-font-family: 'Courier New', monospace;
+      }
+
+      /* Personalización profunda vía CSS Parts */
+      .custom-theme::part(title) {
+        text-transform: uppercase;
+        letter-spacing: 2px;
+      }
+      .custom-theme::part(button) {
+        font-weight: 900;
+        text-transform: uppercase;
+      }
+    </style>
+
     <script>
-      const widget = document.getElementById('payment-widget');
       const log = document.getElementById('log');
 
-      widget.addEventListener('payment-success', (e) => {
-        console.log('Payment successful event caught:', e.detail);
-        log.textContent = `¡Evento recibido! Pago de ${e.detail.amount} ${e.detail.currency} procesado.`;
+      document.body.addEventListener('payment-success', (e) => {
+        console.log('Payment successful event caught from:', e.target.tagName, e.detail);
+        log.textContent = `¡Evento recibido! Pago de ${e.detail.amount} ${e.detail.currency} procesado para el cliente ${e.detail.clientId}.`;
       });
     </script>
   </body>
