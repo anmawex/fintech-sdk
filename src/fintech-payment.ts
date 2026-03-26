@@ -218,6 +218,7 @@ export class FintechPayment extends LitElement {
 
   @property({ type: String }) amount = '0.00';
   @property({ type: String }) currency = 'USD';
+  @property({ type: String, attribute: 'client-id' }) clientId = '';
   
   @state() private cardNumber = '**** **** **** ****';
   @state() private cardName = 'NOMBRE DEL TITULAR';
